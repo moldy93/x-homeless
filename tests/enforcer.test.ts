@@ -178,7 +178,25 @@ describe("NoForYouController", () => {
     expect(followingClickCount).toBe(0);
   });
 
-  it("cleans up cloak state after timeout if tablist never appears", async () => {
+  it("does not cloak when already on Folge ich", async () => {
+    setSelectedTab(1);
+    installTabSwitchBehavior();
+
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    const resultPromise = controller.trigger();
+
+    expect(document.documentElement.hasAttribute("data-no-for-you-cloak")).toBe(false);
+
+    await vi.runAllTimersAsync();
+
+    const result = await resultPromise;
+
+    expect(result.reason).toBe("already-following");
+    expect(document.documentElement.hasAttribute("data-no-for-you-cloak")).toBe(false);
+  });
+
+  it("fails safely without cloaking if tablist never appears", async () => {
     document.body.innerHTML = `
       <main role="main">
         <div data-testid="primaryColumn">
@@ -191,7 +209,7 @@ describe("NoForYouController", () => {
     controllers.push(controller);
     const resultPromise = controller.trigger();
 
-    expect(document.documentElement.getAttribute("data-no-for-you-cloak")).toBe("true");
+    expect(document.documentElement.hasAttribute("data-no-for-you-cloak")).toBe(false);
 
     await vi.advanceTimersByTimeAsync(1500);
     await vi.runAllTimersAsync();
@@ -214,6 +232,38 @@ describe("NoForYouController", () => {
     await vi.runAllTimersAsync();
 
     expect(getTab(1).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("does not flicker on feed mutations while already on Folge ich", async () => {
+    setSelectedTab(1);
+    installTabSwitchBehavior();
+
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    controller.start();
+
+    await vi.runAllTimersAsync();
+
+    const feed = document.querySelector<HTMLElement>("#feed");
+
+    if (!feed) {
+      throw new Error("Expected #feed");
+    }
+
+    feed.insertAdjacentHTML(
+      "beforeend",
+      `
+        <article data-post="4">
+          <time datetime="2026-04-21T10:04:00.000Z"></time>
+        </article>
+      `
+    );
+
+    expect(document.documentElement.hasAttribute("data-no-for-you-cloak")).toBe(false);
+
+    await vi.runAllTimersAsync();
+
+    expect(document.documentElement.hasAttribute("data-no-for-you-cloak")).toBe(false);
   });
 
   it("tries the alternate sort option when feed order is mixed and keeps the better result", async () => {

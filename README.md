@@ -37,7 +37,7 @@ pnpm build
   - tab `0` = `For you`
   - tab `1` = `Following`
 - Ignores later custom tabs
-- Cloaks the home timeline for up to `1500ms` during enforcement
+- Cloaks the home timeline for up to `1500ms` only while correcting `For you` to `Following`
 - If X exposes a binary sort menu on the selected `Following` tab, tries the alternate option once and keeps it only if feed order improves
 - If selectors break, uncloaks and stops fighting instead of blocking the page
 

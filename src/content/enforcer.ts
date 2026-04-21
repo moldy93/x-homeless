@@ -390,8 +390,6 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
       };
     }
 
-    this.cloak(passId);
-
     const tablist = await this.waitForValue(
       () => getHomeTablist(this.document),
       FIND_ATTEMPTS,
@@ -427,6 +425,7 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
     let didSwitchTab = false;
 
     if (isSelectedTab(forYouTab)) {
+      this.cloak(passId);
       didSwitchTab = true;
       const selectedFollowingTab = await this.switchToFollowing(
         forYouTab,

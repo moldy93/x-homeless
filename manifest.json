@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "No For You",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Keeps X home on Following instead of For you.",
   "content_scripts": [
     {
