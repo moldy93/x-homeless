@@ -36,6 +36,7 @@ pnpm build
 - Uses the first two home tabs only:
   - tab `0` = `For you`
   - tab `1` = `Following`
+- Hides the visible `For you` tab so `Following` can use the space
 - Ignores later custom tabs
 - Cloaks the home timeline for up to `1500ms` only while correcting `For you` to `Following`
 - If X exposes a binary sort menu on the selected `Following` tab, tries the alternate option once and keeps it only if feed order improves

@@ -1,6 +1,6 @@
 {
   "name": "no-for-you",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Chrome extension that keeps X home on Following instead of For you.",

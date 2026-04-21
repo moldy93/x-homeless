@@ -1,4 +1,6 @@
 import {
+  HOME_TABLIST_SELECTOR,
+  HOME_TIMELINE_SELECTOR,
   MIN_SORT_SAMPLE_SIZE,
   PRIMARY_COLUMN_SELECTOR,
   SORT_SCORE_THRESHOLD,
@@ -157,6 +159,17 @@ export class NoForYouController {
 html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Timeline"] {
   opacity: 0 !important;
   pointer-events: none !important;
+}
+${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > [role="presentation"]:first-child {
+  display: none !important;
+  flex: 0 0 0 !important;
+  margin: 0 !important;
+  min-width: 0 !important;
+  width: 0 !important;
+}
+${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > [role="presentation"]:nth-child(2) {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
 }
 `;
 

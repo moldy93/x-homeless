@@ -119,6 +119,23 @@ describe("NoForYouController", () => {
     expect(result.didSwitchTab).toBe(true);
   });
 
+  it("injects CSS that hides the For you tab and grows the Following tab", async () => {
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    controller.start();
+
+    const styleElement = document.getElementById("no-for-you-style");
+
+    expect(styleElement?.textContent).toContain(
+      '> [role="presentation"]:first-child'
+    );
+    expect(styleElement?.textContent).toContain("display: none !important");
+    expect(styleElement?.textContent).toContain(
+      '> [role="presentation"]:nth-child(2)'
+    );
+    expect(styleElement?.textContent).toContain("flex: 1 1 auto !important");
+  });
+
   it("prefers keyboard switch so first load does not trigger the Folge ich pulldown", async () => {
     const forYouTab = getTab(0);
     const followingTab = getTab(1);
