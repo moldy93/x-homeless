@@ -5,6 +5,12 @@ function installTabSwitchBehavior(): void {
   const forYouTab = getTab(0);
   const followingTab = getTab(1);
 
+  forYouTab.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowRight") {
+      setSelectedTab(1);
+    }
+  });
+
   forYouTab.addEventListener("click", () => {
     setSelectedTab(0);
   });
@@ -111,6 +117,36 @@ describe("NoForYouController", () => {
     expect(getTab(0).getAttribute("aria-selected")).toBe("false");
     expect(getTab(1).getAttribute("aria-selected")).toBe("true");
     expect(result.didSwitchTab).toBe(true);
+  });
+
+  it("prefers keyboard switch so first load does not trigger the Folge ich pulldown", async () => {
+    const forYouTab = getTab(0);
+    const followingTab = getTab(1);
+    let followingClickCount = 0;
+
+    forYouTab.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight") {
+        setSelectedTab(1);
+      }
+    });
+
+    followingTab.addEventListener("click", () => {
+      followingClickCount += 1;
+      setSelectedTab(1);
+      renderSortMenu();
+    });
+
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    const resultPromise = controller.trigger();
+
+    await vi.runAllTimersAsync();
+
+    const result = await resultPromise;
+
+    expect(result.didSwitchTab).toBe(true);
+    expect(followingClickCount).toBe(0);
+    expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 
   it("does not click the following tab again when already selected and feed is ordered", async () => {

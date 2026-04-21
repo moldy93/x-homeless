@@ -274,30 +274,32 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
     await this.waitForTimestamps(passId);
   }
 
-  private dismissOpenSortMenu(referenceElement?: HTMLElement | null): void {
-    const openMenu = getOpenSortMenu(this.document);
-
-    if (!openMenu) {
-      return;
-    }
-
+  private async dismissOpenSortMenu(
+    referenceElement?: HTMLElement | null
+  ): Promise<void> {
     const escapeEventOptions: KeyboardEventInit = {
       bubbles: true,
       cancelable: true,
       key: "Escape"
     };
 
-    openMenu.dispatchEvent(
-      new KeyboardEvent("keydown", escapeEventOptions)
-    );
+    referenceElement?.dispatchEvent(new KeyboardEvent("keydown", escapeEventOptions));
     this.document.dispatchEvent(
       new KeyboardEvent("keydown", escapeEventOptions)
     );
+    this.browserWindow.dispatchEvent(
+      new KeyboardEvent("keydown", escapeEventOptions)
+    );
 
-    if (getOpenSortMenu(this.document)) {
+    await this.sleep(0);
+
+    if (
+      getOpenSortMenu(this.document) ||
+      referenceElement?.getAttribute("aria-expanded") === "true"
+    ) {
       const clickTarget =
-        getPrimaryColumn(this.document) ??
         referenceElement ??
+        getPrimaryColumn(this.document) ??
         this.document.body;
 
       clickTarget?.dispatchEvent(
@@ -312,9 +314,67 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
           cancelable: true
         })
       );
+
+      await this.sleep(0);
     }
 
     referenceElement?.blur();
+  }
+
+  private async switchToFollowing(
+    forYouTab: HTMLElement,
+    followingTab: HTMLElement,
+    passId: number
+  ): Promise<HTMLElement | null> {
+    const keyboardSelectedFollowingTab = await this.tryKeyboardSwitchToFollowing(
+      forYouTab,
+      passId
+    );
+
+    if (keyboardSelectedFollowingTab) {
+      return keyboardSelectedFollowingTab;
+    }
+
+    followingTab.click();
+    return this.waitForSelectedFollowing(passId);
+  }
+
+  private async tryKeyboardSwitchToFollowing(
+    forYouTab: HTMLElement,
+    passId: number
+  ): Promise<HTMLElement | null> {
+    forYouTab.focus();
+
+    const keyboardEventOptions: KeyboardEventInit = {
+      bubbles: true,
+      cancelable: true,
+      code: "ArrowRight",
+      key: "ArrowRight"
+    };
+
+    forYouTab.dispatchEvent(new KeyboardEvent("keydown", keyboardEventOptions));
+    forYouTab.dispatchEvent(new KeyboardEvent("keyup", keyboardEventOptions));
+
+    return this.waitForSelectedFollowing(passId, 4, 50);
+  }
+
+  private async waitForSelectedFollowing(
+    passId: number,
+    attempts = FIND_ATTEMPTS,
+    intervalMs = FIND_INTERVAL_MS
+  ): Promise<HTMLElement | null> {
+    return this.waitForValue(() => {
+      const refreshedTablist = getHomeTablist(this.document);
+      const refreshedFollowingTab = refreshedTablist
+        ? getFollowingTab(refreshedTablist)
+        : null;
+
+      if (refreshedFollowingTab && isSelectedTab(refreshedFollowingTab)) {
+        return refreshedFollowingTab;
+      }
+
+      return null;
+    }, attempts, intervalMs, passId);
   }
 
   async runEnforcementPass(): Promise<EnforcementResult> {
@@ -367,21 +427,12 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
     let didSwitchTab = false;
 
     if (isSelectedTab(forYouTab)) {
-      followingTab.click();
       didSwitchTab = true;
-
-      const selectedFollowingTab = await this.waitForValue(() => {
-        const refreshedTablist = getHomeTablist(this.document);
-        const refreshedFollowingTab = refreshedTablist
-          ? getFollowingTab(refreshedTablist)
-          : null;
-
-        if (refreshedFollowingTab && isSelectedTab(refreshedFollowingTab)) {
-          return refreshedFollowingTab;
-        }
-
-        return null;
-      }, FIND_ATTEMPTS, FIND_INTERVAL_MS, passId);
+      const selectedFollowingTab = await this.switchToFollowing(
+        forYouTab,
+        followingTab,
+        passId
+      );
 
       if (!selectedFollowingTab) {
         this.uncloak();
@@ -393,7 +444,7 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
         };
       }
 
-      this.dismissOpenSortMenu(selectedFollowingTab);
+      await this.dismissOpenSortMenu(selectedFollowingTab);
     }
 
     const activeTablist = getHomeTablist(this.document);
@@ -431,7 +482,7 @@ html[${CLOAK_ATTRIBUTE}="true"] ${PRIMARY_COLUMN_SELECTOR} [aria-label="Home-Tim
       sortOutcome = await this.tryAlternateSort(activeFollowingTab, score, passId);
     }
 
-    this.dismissOpenSortMenu(activeFollowingTab);
+    await this.dismissOpenSortMenu(activeFollowingTab);
     this.uncloak();
 
     return {
