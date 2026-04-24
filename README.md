@@ -19,7 +19,7 @@ pnpm typecheck
 pnpm build
 ```
 
-Then open `chrome://extensions`, enable developer mode, click `Load unpacked`, and select [dist](/Volumes/mdata/workspace/x-homeless/dist).
+Then open `chrome://extensions`, enable developer mode, click `Load unpacked`, and select the `dist` folder.
 
 ## Scripts
 

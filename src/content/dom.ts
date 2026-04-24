@@ -124,10 +124,8 @@ export function scoreTimelineTimestamps(timestamps: number[]): TimelineScore {
   };
 }
 
-export function getOpenSortMenu(root: ParentNode = document): HTMLElement | null {
-  const menus = Array.from(root.querySelectorAll<HTMLElement>(SORT_MENU_SELECTOR));
-
-  return menus.at(-1) ?? null;
+export function getSortMenus(root: ParentNode = document): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(SORT_MENU_SELECTOR));
 }
 
 export function getBinarySortMenuOptions(menu: ParentNode): HTMLElement[] {

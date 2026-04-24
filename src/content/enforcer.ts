@@ -12,9 +12,10 @@ import {
   getHomeTablist,
   getPrimaryColumn,
   getRouteState,
-  getOpenSortMenu,
+  getSortMenus,
   hasSortMenu,
-  isSelectedTab
+  isSelectedTab,
+  scoreTimelineTimestamps
 } from "./dom";
 import type { EnforcementResult, RouteState, TimelineScore } from "./types";
 
@@ -33,7 +34,21 @@ type TimeoutHandle = ReturnType<Window["setTimeout"]>;
 
 type ObserverTarget = HTMLElement | null;
 
-type SortOutcome = "kept-alternate" | "restored-original" | "skipped";
+type SortOutcome =
+  | "kept-alternate"
+  | "not-attempted"
+  | "restored-original"
+  | "skipped";
+
+type HistoryPatch = {
+  controllers: Set<NoForYouController>;
+  originalPushState: History["pushState"];
+  originalReplaceState: History["replaceState"];
+};
+
+type PatchedHistory = History & {
+  __noForYouPatch?: HistoryPatch;
+};
 
 export class NoForYouController {
   private readonly attemptedSortTabs = new WeakSet<HTMLElement>();
@@ -106,6 +121,7 @@ export class NoForYouController {
     this.uncloak();
     this.disconnectHomeObserver();
     this.rootObserver.disconnect();
+    this.uninstallHistoryPatch();
     this.browserWindow.removeEventListener("popstate", this.onPopState);
   }
 
@@ -198,30 +214,65 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
   }
 
   private installHistoryPatch(): void {
-    const history = this.browserWindow.history as History & {
-      __noForYouPatched?: boolean;
-    };
+    const history = this.browserWindow.history as PatchedHistory;
+    const existingPatch = history.__noForYouPatch;
 
-    if (history.__noForYouPatched) {
+    if (existingPatch) {
+      existingPatch.controllers.add(this);
       return;
     }
 
-    const originalPushState = history.pushState.bind(history);
-    const originalReplaceState = history.replaceState.bind(history);
+    const controllers = new Set<NoForYouController>();
+    controllers.add(this);
+
+    const patch: HistoryPatch = {
+      controllers,
+      originalPushState: history.pushState.bind(history) as History["pushState"],
+      originalReplaceState: history.replaceState.bind(
+        history
+      ) as History["replaceState"]
+    };
 
     history.pushState = ((...arguments_) => {
-      const result = originalPushState(...arguments_);
-      this.scheduleRouteCheck();
+      const result = patch.originalPushState(...arguments_);
+
+      for (const controller of patch.controllers) {
+        controller.scheduleRouteCheck();
+      }
+
       return result;
     }) as History["pushState"];
 
     history.replaceState = ((...arguments_) => {
-      const result = originalReplaceState(...arguments_);
-      this.scheduleRouteCheck();
+      const result = patch.originalReplaceState(...arguments_);
+
+      for (const controller of patch.controllers) {
+        controller.scheduleRouteCheck();
+      }
+
       return result;
     }) as History["replaceState"];
 
-    history.__noForYouPatched = true;
+    history.__noForYouPatch = patch;
+  }
+
+  private uninstallHistoryPatch(): void {
+    const history = this.browserWindow.history as PatchedHistory;
+    const patch = history.__noForYouPatch;
+
+    if (!patch) {
+      return;
+    }
+
+    patch.controllers.delete(this);
+
+    if (patch.controllers.size > 0) {
+      return;
+    }
+
+    history.pushState = patch.originalPushState;
+    history.replaceState = patch.originalReplaceState;
+    delete history.__noForYouPatch;
   }
 
   private refreshHomeObserver(): void {
@@ -263,14 +314,7 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
   }
 
   private async restoreOriginalSort(trigger: HTMLElement, passId: number): Promise<void> {
-    trigger.click();
-
-    const menu = await this.waitForValue(
-      () => getOpenSortMenu(this.document),
-      SORT_MENU_ATTEMPTS,
-      SORT_MENU_INTERVAL_MS,
-      passId
-    );
+    const menu = await this.openSortMenu(trigger, passId);
 
     if (!menu) {
       return;
@@ -306,22 +350,14 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
 
     await this.sleep(0);
 
-    if (
-      getOpenSortMenu(this.document) ||
-      referenceElement?.getAttribute("aria-expanded") === "true"
-    ) {
-      const clickTarget =
-        referenceElement ??
-        getPrimaryColumn(this.document) ??
-        this.document.body;
-
-      clickTarget?.dispatchEvent(
+    if (referenceElement?.getAttribute("aria-expanded") === "true") {
+      referenceElement.dispatchEvent(
         new MouseEvent("mousedown", {
           bubbles: true,
           cancelable: true
         })
       );
-      clickTarget?.dispatchEvent(
+      referenceElement.dispatchEvent(
         new MouseEvent("click", {
           bubbles: true,
           cancelable: true
@@ -477,11 +513,11 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
     const timestamps = await this.waitForTimestamps(passId);
     const score =
       timestamps.length >= MIN_SORT_SAMPLE_SIZE
-        ? this.scoreTimestamps(timestamps)
+        ? scoreTimelineTimestamps(timestamps)
         : undefined;
 
     let attemptedSort = false;
-    let sortOutcome: SortOutcome = "skipped";
+    let sortOutcome: SortOutcome = "not-attempted";
 
     if (
       score &&
@@ -518,6 +554,10 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
       return "sort-restored-original";
     }
 
+    if (sortOutcome === "skipped") {
+      return "sort-skipped";
+    }
+
     return didSwitchTab ? "switched-following" : "already-following";
   }
 
@@ -539,44 +579,12 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
     }, delay);
   }
 
-  private scoreTimestamps(timestamps: number[]): TimelineScore {
-    return {
-      ...this.scoreTimelineTimestamps(timestamps)
-    };
-  }
-
-  private scoreTimelineTimestamps(timestamps: number[]): TimelineScore {
-    const pairCount = Math.max(0, timestamps.length - 1);
-    let descendingPairs = 0;
-
-    for (let index = 0; index < pairCount; index += 1) {
-      if (timestamps[index] >= timestamps[index + 1]) {
-        descendingPairs += 1;
-      }
-    }
-
-    return {
-      descendingPairs,
-      pairCount,
-      sampleSize: timestamps.length,
-      score: pairCount === 0 ? 1 : descendingPairs / pairCount,
-      timestamps: [...timestamps]
-    };
-  }
-
   private async tryAlternateSort(
     trigger: HTMLElement,
     baselineScore: TimelineScore,
     passId: number
   ): Promise<SortOutcome> {
-    trigger.click();
-
-    const menu = await this.waitForValue(
-      () => getOpenSortMenu(this.document),
-      SORT_MENU_ATTEMPTS,
-      SORT_MENU_INTERVAL_MS,
-      passId
-    );
+    const menu = await this.openSortMenu(trigger, passId);
 
     if (!menu) {
       return "skipped";
@@ -597,7 +605,7 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
       return "skipped";
     }
 
-    const alternateScore = this.scoreTimestamps(alternateTimestamps);
+    const alternateScore = scoreTimelineTimestamps(alternateTimestamps);
 
     if (alternateScore.score > baselineScore.score) {
       return "kept-alternate";
@@ -605,6 +613,32 @@ ${PRIMARY_COLUMN_SELECTOR} ${HOME_TIMELINE_SELECTOR} ${HOME_TABLIST_SELECTOR} > 
 
     await this.restoreOriginalSort(trigger, passId);
     return "restored-original";
+  }
+
+  private async openSortMenu(
+    trigger: HTMLElement,
+    passId: number
+  ): Promise<HTMLElement | null> {
+    const existingMenus = new Set(getSortMenus(this.document));
+
+    trigger.click();
+
+    return this.waitForValue(
+      () => this.getNewSortMenu(existingMenus),
+      SORT_MENU_ATTEMPTS,
+      SORT_MENU_INTERVAL_MS,
+      passId
+    );
+  }
+
+  private getNewSortMenu(
+    existingMenus: ReadonlySet<HTMLElement>
+  ): HTMLElement | null {
+    const newMenus = getSortMenus(this.document).filter(
+      (menu) => !existingMenus.has(menu)
+    );
+
+    return newMenus.at(-1) ?? null;
   }
 
   private uncloak(): void {

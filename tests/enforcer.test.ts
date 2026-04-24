@@ -251,6 +251,22 @@ describe("NoForYouController", () => {
     expect(getTab(1).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("does not handle patched history routes after stop", async () => {
+    installTabSwitchBehavior();
+    window.history.replaceState({}, "", "/explore");
+
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    controller.start();
+    controller.stop();
+
+    window.history.pushState({}, "", "/home");
+    await vi.runAllTimersAsync();
+
+    expect(getTab(0).getAttribute("aria-selected")).toBe("true");
+    expect(getTab(1).getAttribute("aria-selected")).toBe("false");
+  });
+
   it("does not flicker on feed mutations while already on Folge ich", async () => {
     setSelectedTab(1);
     installTabSwitchBehavior();
@@ -311,6 +327,50 @@ describe("NoForYouController", () => {
       "2026-04-21T10:01:00.000Z",
       "2026-04-21T09:59:00.000Z"
     ]);
+  });
+
+  it("skips sort without clicking unrelated open menus", async () => {
+    setSelectedTab(1);
+    setFeedTimes([
+      "2026-04-21T10:00:00.000Z",
+      "2026-04-21T10:03:00.000Z",
+      "2026-04-21T09:59:00.000Z"
+    ]);
+
+    const unrelatedMenu = document.createElement("div");
+    unrelatedMenu.setAttribute("role", "menu");
+    unrelatedMenu.innerHTML = `
+      <button aria-checked="true" data-menu-item="first" role="menuitemradio">First</button>
+      <button aria-checked="false" data-menu-item="second" role="menuitemradio">Second</button>
+    `;
+
+    const unrelatedOption = unrelatedMenu.querySelector<HTMLElement>(
+      '[data-menu-item="second"]'
+    );
+
+    if (!unrelatedOption) {
+      throw new Error("Expected unrelated option");
+    }
+
+    let unrelatedClickCount = 0;
+
+    unrelatedOption.addEventListener("click", () => {
+      unrelatedClickCount += 1;
+    });
+
+    document.body.appendChild(unrelatedMenu);
+
+    const controller = new NoForYouController(window);
+    controllers.push(controller);
+    const resultPromise = controller.trigger();
+
+    await vi.runAllTimersAsync();
+
+    const result = await resultPromise;
+
+    expect(result.attemptedSort).toBe(true);
+    expect(result.reason).toBe("sort-skipped");
+    expect(unrelatedClickCount).toBe(0);
   });
 
   it("closes an open pulldown after the first switch to Folge ich", async () => {
